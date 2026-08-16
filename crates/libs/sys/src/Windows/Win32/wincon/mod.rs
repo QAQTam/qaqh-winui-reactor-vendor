@@ -1,0 +1,1 @@
+pub const CONSOLE_TEXTMODE_BUFFER: i32 = 1;

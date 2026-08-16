@@ -1,0 +1,82 @@
+name: test_reactor
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+concurrency:
+  group: selftest-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
+jobs:
+  selftest:
+    name: cargo run -p test_reactor_selftest
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Update toolchain
+        run: rustup update --no-self-update stable && rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Windows App Runtime
+        shell: pwsh
+        run: |
+          $installerUrl = "https://aka.ms/windowsappsdk/2.4/2.4.0/windowsappruntimeinstall-x64.exe"
+          $installerPath = "$env:TEMP\WindowsAppRuntimeInstall.exe"
+          Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+          Start-Process -FilePath $installerPath -ArgumentList "--quiet" -Wait -PassThru | Out-Null
+
+      - name: cargo run -p test_reactor_selftest -- --headless
+        run: cargo run -p test_reactor_selftest -- --headless
+        shell: pwsh
+
+  reconciler-quality:
+    name: reconciler coverage and performance
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Update toolchain
+        run: rustup update --no-self-update stable && rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install coverage tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          rustup toolchain install nightly --profile minimal --component llvm-tools-preview
+          cargo install cargo-llvm-cov --locked --version 0.8.7
+
+      - name: Reconciler branch coverage
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          cargo +nightly llvm-cov clean --workspace
+          cargo +nightly llvm-cov -p test_reactor --branch --no-report
+          cargo +nightly llvm-cov report -p windows-reactor --branch --json `
+            --output-path target\reactor-coverage.json
+          crates\tests\libs\reactor\coverage.ps1
+
+      - name: Compare reconciler performance with merge base
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          crates\tests\libs\reactor_bench\compare.ps1 `
+            -BaseRef "${{ github.event.pull_request.base.sha }}"

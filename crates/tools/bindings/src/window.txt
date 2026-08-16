@@ -1,0 +1,36 @@
+--out crates/libs/window/src/bindings.rs
+--flat --minimal --dead-code
+
+--filter
+    RECT
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    SetProcessDpiAwarenessContext
+    CreateWindowExW
+    CS_HREDRAW
+    CS_VREDRAW
+    CW_USEDEFAULT
+    DefWindowProcW
+    DestroyWindow
+    DispatchMessageW
+    GetClientRect
+    GetMessageW
+    GetWindowLongPtrW
+    GWLP_USERDATA
+    IDC_ARROW
+    IsWindow
+    LoadCursorW
+    MSG
+    PeekMessageW
+    PM_REMOVE
+    PostQuitMessage
+    RegisterClassW
+    SetWindowLongPtrW
+    ShowWindow
+    SW_SHOWNORMAL
+    TranslateMessage
+    WM_DESTROY
+    WM_NCDESTROY
+    WM_QUIT
+    WM_SIZE
+    WNDCLASSW
+    WS_OVERLAPPEDWINDOW

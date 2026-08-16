@@ -1,0 +1,73 @@
+[package]
+name = "test_readme"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies.windows]
+workspace = true
+features = [
+    "Data_Xml_Dom",
+    "handleapi",
+    "minwinbase",
+    "processthreadsapi",
+    "securitybaseapi",
+    "synchapi",
+    "windef",
+    "winerror",
+    "winnt",
+    "winuser",
+]
+
+[dependencies.windows-sys]
+workspace = true
+features = [
+    "handleapi",
+    "minwinbase",
+    "processthreadsapi",
+    "securitybaseapi",
+    "synchapi",
+    "windef",
+    "winerror",
+    "winnt",
+    "winuser",
+]
+
+[dev-dependencies.windows-bindgen]
+workspace = true
+
+[dependencies.windows-link]
+workspace = true
+
+[dev-dependencies.windows-result]
+workspace = true
+
+[dev-dependencies.windows-registry]
+workspace = true
+
+[dev-dependencies.windows-version]
+workspace = true
+
+[dev-dependencies.windows-strings]
+workspace = true
+
+[dev-dependencies.windows-future]
+workspace = true
+features = ["std"]
+
+[dev-dependencies.cppwinrt]
+workspace = true
+
+[dev-dependencies.windows-collections]
+workspace = true
+features = ["std"]
+
+[dev-dependencies.windows-core]
+workspace = true
+
+[dev-dependencies.windows-numerics]
+workspace = true
+features = ["std"]
+
+[lints]
+workspace = true

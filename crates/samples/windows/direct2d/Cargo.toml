@@ -1,0 +1,38 @@
+[package]
+name = "windows_direct2d"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies.windows]
+workspace = true
+default-features = true
+features = [
+    "combaseapi",
+    "d2d",
+    "d3d11",
+    "d3dcommon",
+    "dcommon",
+    "dxgi",
+    "minwinbase",
+    "minwindef",
+    "objbase",
+    "profileapi",
+    "strmif",
+    "sysinfoapi",
+    "uianimation",
+    "windef",
+    "winerror",
+    "wingdi",
+    "winuser",
+    "wuapi",
+]
+
+[dependencies.windows-numerics]
+workspace = true
+
+[dependencies.windows-window]
+workspace = true
+
+[lints]
+workspace = true

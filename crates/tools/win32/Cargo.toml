@@ -1,0 +1,14 @@
+[package]
+name = "tool_win32"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[dependencies]
+helpers = { workspace = true }
+windows-clang = { workspace = true }
+windows-metadata = { workspace = true }
+
+[lints]
+workspace = true

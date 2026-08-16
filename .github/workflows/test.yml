@@ -1,0 +1,93 @@
+name: test
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths-ignore:
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'crates/libs/rdl/rdl.md'
+      - 'docs/**'
+  push:
+    paths-ignore:
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'crates/libs/rdl/rdl.md'
+      - 'docs/**'
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    strategy:
+      matrix:
+        include:
+          - name: stable x64
+            host: x86_64-pc-windows-msvc
+            target: x86_64-pc-windows-msvc
+            runner: windows-2025-vs2026
+          - name: stable i686
+            host: x86_64-pc-windows-msvc
+            target: i686-pc-windows-msvc
+            runner: windows-2025-vs2026
+          - name: stable arm64
+            host: aarch64-pc-windows-msvc
+            target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+
+    runs-on: ${{ matrix.runner }}
+
+    env:
+      RUSTFLAGS: -D warnings
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Update toolchain
+        run: rustup update --no-self-update stable && rustup default stable-${{ matrix.host }}
+      - name: Add toolchain target
+        run: rustup target add ${{ matrix.target }}
+      - name: Install fmt
+        run: rustup component add rustfmt
+      - name: Fix environment
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/fix-environment
+        with:
+          target: ${{ matrix.target }}
+      - name: Install .NET x86 runtimes
+        # The windows-2025-vs2026 image ships .NET only for x64/arm64. The
+        # i686 C# tests launch win-x86 processes targeting .NET 9 and .NET 10.
+        if: matrix.target == 'i686-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $script = Join-Path $env:RUNNER_TEMP 'dotnet-install.ps1'
+          Invoke-WebRequest -UseBasicParsing 'https://dot.net/v1/dotnet-install.ps1' -OutFile $script
+          & $script -Channel 9.0 -Runtime dotnet -Architecture x86 -InstallDir "${env:ProgramFiles(x86)}\dotnet"
+          & $script -Channel 10.0 -Runtime dotnet -Architecture x86 -InstallDir "${env:ProgramFiles(x86)}\dotnet"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Provision libclang (Windows)
+        # Export LIBCLANG_PATH from the pinned NuGet build (the same one the scrapers use) for the
+        # test_clang suite. After rust-cache so the tool_clang build is cache-accelerated.
+        if: runner.os == 'Windows'
+        run: echo "LIBCLANG_PATH=$(cargo run -q -p tool_clang -- path)" >> "$GITHUB_ENV"
+        shell: bash
+      - name: Test
+        # windows-composition and its `system` consumers (test_composition, the composition samples)
+        # are excluded here: windows-reactor now requires windows-composition's `reactor` stack, so the
+        # unified `--all` build is reactor-primary and the mutually-exclusive `system` stack is tested
+        # in the separate step below.
+        run: cargo test --all --target ${{ matrix.target }} --exclude windows-composition --exclude test_composition --exclude composition_standalone --exclude composition_minesweeper --exclude composition_canvas
+      - name: Test composition system stack
+        run: cargo test -p windows-composition -p test_composition -p composition_standalone -p composition_minesweeper -p composition_canvas --target ${{ matrix.target }}
+      - name: Check diff
+        shell: bash
+        run: |
+          git add -N .
+          git diff --exit-code || (echo 'Tests changed code in the repo.'; exit 1)

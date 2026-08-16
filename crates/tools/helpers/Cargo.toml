@@ -1,0 +1,13 @@
+[package]
+name = "helpers"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+windows-link = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+toml = "1.0"
+
+[lints]
+workspace = true

@@ -1,0 +1,303 @@
+#![windows_subsystem = "windows"]
+
+use windows_canvas::*;
+use windows_reactor::*;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Rectangle,
+    Triangle,
+    Star,
+}
+
+impl Kind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Rectangle => "Rectangle",
+            Self::Triangle => "Triangle",
+            Self::Star => "Star",
+        }
+    }
+}
+
+struct Shape {
+    kind: Kind,
+    x: f32,
+    y: f32,
+    color: ColorF,
+    path: Option<Path>,
+    built_at: Option<(f32, f32)>,
+}
+
+impl Shape {
+    fn new(kind: Kind, x: f32, y: f32, color: ColorF) -> Self {
+        Self {
+            kind,
+            x,
+            y,
+            color,
+            path: None,
+            built_at: None,
+        }
+    }
+}
+
+struct Model {
+    shapes: Vec<Shape>,
+    kind: Kind,
+    selected: Option<usize>,
+    drag_offset: Option<(f32, f32)>,
+    next_color: usize,
+}
+
+impl Model {
+    fn new() -> Self {
+        Self {
+            shapes: Vec::new(),
+            kind: Kind::Star,
+            selected: None,
+            drag_offset: None,
+            next_color: 0,
+        }
+    }
+
+    fn hit(&self, x: f32, y: f32) -> Option<usize> {
+        self.shapes
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, s)| {
+                s.path
+                    .as_ref()
+                    .is_some_and(|p| p.fill_contains_point(Vector2::new(x, y)))
+            })
+            .map(|(i, _)| i)
+    }
+}
+
+fn app(cx: &mut RenderCx) -> Element {
+    let model = cx.use_ref(Model::new());
+    let inv = cx.use_invalidator();
+
+    let on_pressed = cx.use_callback((), {
+        let (model, inv) = (model.clone(), inv.clone());
+        move |info: PointerEventInfo| {
+            let (x, y) = (info.x as f32, info.y as f32);
+            let mut m = model.borrow_mut();
+            let hit = m.hit(x, y);
+
+            if info.is_right_button_pressed {
+                if let Some(i) = hit {
+                    m.shapes.remove(i);
+                    m.selected = None;
+                    m.drag_offset = None;
+                }
+                inv.invalidate();
+                return;
+            }
+
+            if let Some(i) = hit {
+                let (sx, sy) = (m.shapes[i].x, m.shapes[i].y);
+                m.selected = Some(i);
+                m.drag_offset = Some((x - sx, y - sy));
+            } else {
+                let kind = m.kind;
+                let color = palette(m.next_color);
+                m.next_color += 1;
+                m.shapes.push(Shape::new(kind, x, y, color));
+                m.selected = Some(m.shapes.len() - 1);
+                m.drag_offset = Some((0.0, 0.0));
+            }
+            inv.invalidate();
+        }
+    });
+
+    let on_moved = cx.use_callback((), {
+        let (model, inv) = (model.clone(), inv.clone());
+        move |info: PointerEventInfo| {
+            if !info.is_left_button_pressed {
+                return;
+            }
+            let mut m = model.borrow_mut();
+            if let (Some(i), Some((ox, oy))) = (m.selected, m.drag_offset)
+                && let Some(s) = m.shapes.get_mut(i)
+            {
+                s.x = info.x as f32 - ox;
+                s.y = info.y as f32 - oy;
+                drop(m);
+                inv.invalidate();
+            }
+        }
+    });
+
+    let on_released = cx.use_callback((), {
+        let model = model.clone();
+        move |_: PointerEventInfo| model.borrow_mut().drag_offset = None
+    });
+
+    let margin = 16.0;
+
+    grid((
+        canvas_invalidated(&inv, {
+            let model = model.clone();
+            move |ctx| draw(ctx, &model)
+        })
+        .on_pointer_pressed(on_pressed)
+        .on_pointer_moved(on_moved)
+        .on_pointer_released(on_released)
+        .margin(Thickness {
+            left: margin,
+            top: margin,
+            right: margin,
+            bottom: 0.0,
+        })
+        .grid_row(0),
+        hstack((
+            tool_button(&model, &inv, Kind::Rectangle),
+            tool_button(&model, &inv, Kind::Triangle),
+            tool_button(&model, &inv, Kind::Star),
+            button("Clear").on_click({
+                let (model, inv) = (model.clone(), inv.clone());
+                move || {
+                    let mut m = model.borrow_mut();
+                    m.shapes.clear();
+                    m.selected = None;
+                    m.drag_offset = None;
+                    drop(m);
+                    inv.invalidate();
+                }
+            }),
+        ))
+        .spacing(8.0)
+        .margin(Thickness::uniform(margin))
+        .grid_row(1),
+    ))
+    .rows([GridLength::STAR, GridLength::Auto])
+    .into()
+}
+
+fn tool_button(model: &HookRef<Model>, inv: &Invalidator, kind: Kind) -> Button {
+    let (model, inv) = (model.clone(), inv.clone());
+    button(kind.label()).on_click(move || {
+        model.borrow_mut().kind = kind;
+        inv.invalidate();
+    })
+}
+
+fn draw(ctx: &DrawContext<'_>, model: &HookRef<Model>) -> Result<()> {
+    ctx.clear(ColorF::new(0.11, 0.12, 0.16, 1.0));
+
+    let grid_brush = ctx.create_solid_brush(ColorF::new(1.0, 1.0, 1.0, 0.06))?;
+    let step = 40.0;
+    let mut gx = step;
+    while gx < ctx.width {
+        ctx.draw_line(
+            Vector2::new(gx, 0.0),
+            Vector2::new(gx, ctx.height),
+            &grid_brush,
+            1.0,
+        );
+        gx += step;
+    }
+    let mut gy = step;
+    while gy < ctx.height {
+        ctx.draw_line(
+            Vector2::new(0.0, gy),
+            Vector2::new(ctx.width, gy),
+            &grid_brush,
+            1.0,
+        );
+        gy += step;
+    }
+
+    let device_changed = ctx.device_changed();
+    let mut m = model.borrow_mut();
+    let selected = m.selected;
+
+    for (i, s) in m.shapes.iter_mut().enumerate() {
+        if device_changed || s.built_at != Some((s.x, s.y)) {
+            s.path = build_path(ctx.device(), s.kind, s.x, s.y).ok();
+            s.built_at = Some((s.x, s.y));
+        }
+        let Some(path) = &s.path else {
+            continue;
+        };
+
+        let brush = ctx.create_solid_brush(s.color)?;
+        ctx.fill_path(path, &brush);
+
+        if Some(i) == selected {
+            let brush = ctx.create_solid_brush(ColorF::WHITE)?;
+            let b = path.compute_bounds();
+            let pad = 4.0;
+            ctx.draw_rect(
+                &Rect::new(b.left - pad, b.top - pad, b.right + pad, b.bottom + pad),
+                &brush,
+                1.5,
+            );
+        }
+    }
+
+    let format = TextFormat::with_weight("Segoe UI", 16.0, FontWeight::BOLD)?;
+    let brush = ctx.create_solid_brush(ColorF::WHITE)?;
+    let label = format!(
+        "{} shape(s)  ·  tool: {}  ·  click to add, left-drag to move, right-click to delete",
+        m.shapes.len(),
+        m.kind.label()
+    );
+    let rect = Rect::new(12.0, ctx.height - 30.0, ctx.width, ctx.height);
+    ctx.draw_text(&label, &format, &rect, &brush);
+    Ok(())
+}
+
+const SIZE: f32 = 38.0;
+
+fn build_path(device: &GpuDevice, kind: Kind, x: f32, y: f32) -> Result<Path> {
+    PathBuilder::new(device)?.polygon(polygon(kind, x, y))
+}
+
+fn polygon(kind: Kind, x: f32, y: f32) -> Vec<Vector2> {
+    match kind {
+        Kind::Rectangle => {
+            let (hw, hh) = (SIZE, SIZE * 0.72);
+            vec![
+                Vector2::new(x - hw, y - hh),
+                Vector2::new(x + hw, y - hh),
+                Vector2::new(x + hw, y + hh),
+                Vector2::new(x - hw, y + hh),
+            ]
+        }
+        Kind::Triangle => vec![
+            Vector2::new(x, y - SIZE),
+            Vector2::new(x + SIZE, y + SIZE),
+            Vector2::new(x - SIZE, y + SIZE),
+        ],
+        Kind::Star => (0..10)
+            .map(|i| {
+                let r = if i % 2 == 0 { SIZE } else { SIZE * 0.45 };
+                let angle = std::f32::consts::PI / 5.0 * i as f32 - std::f32::consts::FRAC_PI_2;
+                Vector2::new(x + r * angle.cos(), y + r * angle.sin())
+            })
+            .collect(),
+    }
+}
+
+fn palette(i: usize) -> ColorF {
+    const COLORS: [(f32, f32, f32); 6] = [
+        (0.26, 0.47, 0.78),
+        (0.86, 0.31, 0.47),
+        (0.30, 0.69, 0.40),
+        (0.95, 0.61, 0.18),
+        (0.55, 0.40, 0.78),
+        (0.20, 0.68, 0.71),
+    ];
+    let (r, g, b) = COLORS[i % COLORS.len()];
+    ColorF::new(r, g, b, 1.0)
+}
+
+fn main() -> Result<()> {
+    App::new()
+        .title("Canvas editor")
+        .backdrop(Backdrop::Mica)
+        .render(app)
+}

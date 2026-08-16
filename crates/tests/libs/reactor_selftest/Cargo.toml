@@ -1,0 +1,21 @@
+[package]
+name = "test_reactor_selftest"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+windows-reactor = { workspace = true }
+
+windows-core = { workspace = true }
+windows-collections = { workspace = true }
+windows-future = { workspace = true }
+windows-numerics = { workspace = true }
+windows-reference = { workspace = true, features = ["std"] }
+windows-time = { workspace = true }
+
+[build-dependencies]
+windows-reactor-setup = { workspace = true }
+
+[lints]
+workspace = true
