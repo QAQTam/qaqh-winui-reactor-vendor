@@ -21,6 +21,10 @@
 - 上游更新时：在 `QAQTam/qaq-winui-reactor` 的 `deepx-winui` 分支完成 merge 后，重新执行 `git archive` 生成新的 vendor commit。
 - 本仓库不接收功能修改；修改一律回到 fork 分支进行。
 
+## 同步记录（winui-app 侧重写触发）
+
+- 2026-08-21 `sidebar` 简化为纯工作区导航（`TabView` 单一切换）+ `home/startup` 工作区选择器，`vendor` 无代码变更，仅刷新快照 rev 供 `qaqh-winui-app` 重新锁定（`1ee42c9 -> next`）。
+
 ## 结构
 
 完整保留 fork 工作树（`crates/libs/*`、`crates/tools/*`、根 workspace Cargo.toml），其中被 QAQ-Harness 消费的包：
