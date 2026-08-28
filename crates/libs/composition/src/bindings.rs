@@ -1787,7 +1787,44 @@ impl ICompositor {
             .and_then(|| windows_core::Type::from_abi(result__))
         }
     }
+    pub(crate) fn CreateVector2KeyFrameAnimation(
+        &self,
+    ) -> windows_core::Result<Vector2KeyFrameAnimation> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).CreateVector2KeyFrameAnimation)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::Type::from_abi(result__))
+        }
+    }
 }
+windows_core::imp::define_interface!(
+    IVector2KeyFrameAnimation,
+    IVector2KeyFrameAnimation_Vtbl,
+    0xdf414515_4e29_4f11_b55e_bf2a6eb36294
+);
+impl windows_core::RuntimeType for IVector2KeyFrameAnimation {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+#[repr(C)]
+#[doc(hidden)]
+pub struct IVector2KeyFrameAnimation_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    pub InsertKeyFrame: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        f32,
+        windows_numerics::Vector2,
+    ) -> windows_core::HRESULT,
+    pub InsertKeyFrameWithEasingFunction: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        f32,
+        windows_numerics::Vector2,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+
 #[repr(C)]
 pub struct ICompositor_Vtbl {
     pub base__: windows_core::IInspectable_Vtbl,
@@ -1840,7 +1877,10 @@ pub struct ICompositor_Vtbl {
         *mut *mut core::ffi::c_void,
     ) -> windows_core::HRESULT,
     CreateTargetForCurrentView: usize,
-    CreateVector2KeyFrameAnimation: usize,
+    pub CreateVector2KeyFrameAnimation: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
     pub CreateVector3KeyFrameAnimation: unsafe extern "system" fn(
         *mut core::ffi::c_void,
         *mut *mut core::ffi::c_void,
@@ -3050,6 +3090,40 @@ impl windows_core::RuntimeName for Vector3KeyFrameAnimation {
 }
 unsafe impl Send for Vector3KeyFrameAnimation {}
 unsafe impl Sync for Vector3KeyFrameAnimation {}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Vector2KeyFrameAnimation(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    Vector2KeyFrameAnimation,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+windows_core::imp::required_hierarchy!(
+    Vector2KeyFrameAnimation,
+    ICompositionAnimationBase,
+    KeyFrameAnimation,
+    CompositionAnimation,
+    CompositionObject
+);
+impl windows_core::RuntimeType for Vector2KeyFrameAnimation {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, IVector2KeyFrameAnimation>();
+}
+unsafe impl windows_core::Interface for Vector2KeyFrameAnimation {
+    type Vtable = <IVector2KeyFrameAnimation as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <IVector2KeyFrameAnimation as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for Vector2KeyFrameAnimation {
+    type Target = IVector2KeyFrameAnimation;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for Vector2KeyFrameAnimation {
+    const NAME: &'static str = "Windows.UI.Composition.Vector2KeyFrameAnimation";
+}
+unsafe impl Send for Vector2KeyFrameAnimation {}
+unsafe impl Sync for Vector2KeyFrameAnimation {}
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Visual(windows_core::IUnknown);

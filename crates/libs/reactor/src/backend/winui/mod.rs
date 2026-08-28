@@ -1207,6 +1207,52 @@ fn apply_implicit_transitions(
     Ok(())
 }
 
+/// Layout-driven implicit animation (F-N11): whenever XAML arrange changes
+/// the backing visual's Size/Offset, tween from the previous value to the
+/// new one. Owns the element's ImplicitAnimations collection entirely
+/// (enter/exit use the separate Show/Hide implicit APIs and are unaffected;
+/// combining with the ImplicitTransitions DSL on one element is unsupported
+/// in v1). Spring curves need NaturalMotionAnimation wrappers — follow-up.
+fn apply_layout_animation(
+    ui: &bindings::UIElement,
+    config: Option<LayoutAnimationConfig>,
+) -> Result<()> {
+    let visual = element_visual(ui)?;
+    let compositor = visual.compositor();
+    // v1 独占语义：布局动画整体接管元素的 ImplicitAnimations 集合。
+    let collection = compositor.create_implicit_animation_collection();
+    let Some(c) = config else {
+        // 清除布局动画 = 换成空集合（Size/Offset 键随集合消失）。
+        visual.set_implicit_animations(None);
+        return Ok(());
+    };
+    let insert_tween = |target: &str| {
+        collection.remove(target);
+        let a = compositor.create_vector3_key_frame_animation();
+        a.set_duration(c.duration);
+        let easing = easing_for(&compositor, Easing::EaseOut);
+        a.insert_expression_key_frame_with_easing(1.0, "this.FinalValue", &easing);
+        a.set_target(target);
+        collection.insert(target, &a);
+    };
+    if c.animate_offset {
+        insert_tween("Offset");
+    }
+    if c.animate_size {
+        // Visual.Size 是 Vector2：必须用 vector2 关键帧动画
+        //（vector3 喂 Vector2 属性会 E_INVALIDARG → stowed crash）。
+        collection.remove("Size");
+        let a = compositor.create_vector2_key_frame_animation();
+        a.set_duration(c.duration);
+        let easing = easing_for(&compositor, Easing::EaseOut);
+        a.insert_expression_key_frame_with_easing(1.0, "this.FinalValue", &easing);
+        a.set_target("Size");
+        collection.insert("Size", &a);
+    }
+    visual.set_implicit_animations(Some(&collection));
+    Ok(())
+}
+
 fn run_property_animation_inner(ui: &bindings::UIElement, cfg: AnimationConfig) -> Result<()> {
     let visual = element_visual(ui)?;
     let compositor = visual.compositor();
@@ -3737,7 +3783,16 @@ impl Backend for WinUIBackend {
             diag::warn(format_args!("set_implicit_transitions failed: {e:?}"));
         }
     }
-    fn set_layout_animation(&mut self, _id: ControlId, _config: Option<LayoutAnimationConfig>) {}
+    fn set_layout_animation(&mut self, id: ControlId, config: Option<LayoutAnimationConfig>) {
+        let map = self.controls.borrow();
+        let Some(handle) = map.get(&id) else {
+            return;
+        };
+        let ui: bindings::UIElement = handle.as_ui_element();
+        if let Err(e) = apply_layout_animation(&ui, config) {
+            diag::warn(format_args!("set_layout_animation failed: {e:?}"));
+        }
+    }
     fn run_property_animation(&mut self, id: ControlId, config: Option<AnimationConfig>) {
         let Some(cfg) = config else {
             return;

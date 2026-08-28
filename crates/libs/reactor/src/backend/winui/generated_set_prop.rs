@@ -351,6 +351,19 @@ pub fn dispatch(handle: &Handle, prop: Prop, value: &PropValue) -> Result<bool> 
         (Prop::Minimum, PropValue::F64(v), Handle::NumberBox(h)) => {
             h.SetMinimum(*v)?;
         }
+        // QAQ P1 手工补臂：SmallChange/LargeChange/SpinButtonPlacementMode
+        // （压缩阈值 NumberBox 化，2026-08-26；regen 时需保留）。
+        (Prop::SmallChange, PropValue::F64(v), Handle::NumberBox(h)) => {
+            h.SetSmallChange(*v)?;
+        }
+        (Prop::LargeChange, PropValue::F64(v), Handle::NumberBox(h)) => {
+            h.SetLargeChange(*v)?;
+        }
+        (Prop::SpinButtonPlacementMode, PropValue::I32(v), Handle::NumberBox(h)) => {
+            h.SetSpinButtonPlacementMode(
+                bindings::NumberBoxSpinButtonPlacementMode(*v),
+            )?;
+        }
         (Prop::Minimum, PropValue::F64(v), Handle::ProgressRing(h)) => {
             h.SetMinimum(*v)?;
         }

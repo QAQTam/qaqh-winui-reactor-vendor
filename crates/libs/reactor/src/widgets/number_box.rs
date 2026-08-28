@@ -10,6 +10,11 @@ pub struct NumberBox {
     pub on_value_changed: Option<Callback<f64>>,
     pub header: Option<String>,
     pub is_enabled: bool,
+    /// 旋钮步进（QAQ：压缩阈值 0.05）。
+    pub small_change: Option<f64>,
+    pub large_change: Option<f64>,
+    /// 0=Hidden 1=Compact 2=Inline（NumberBoxSpinButtonPlacementMode）。
+    pub spin_button_placement_mode: Option<i32>,
 }
 impl Default for NumberBox {
     fn default() -> Self {
@@ -22,6 +27,9 @@ impl Default for NumberBox {
             on_value_changed: None,
             header: None,
             is_enabled: true,
+            small_change: None,
+            large_change: None,
+            spin_button_placement_mode: None,
         }
     }
 }
@@ -49,11 +57,39 @@ impl NumberBox {
         self.is_enabled = enabled;
         self
     }
+    /// 旋钮小步长（WinUI SmallChange）。
+    pub fn small_change(mut self, v: f64) -> Self {
+        self.small_change = Some(v);
+        self
+    }
+    /// 旋钮大步长（WinUI LargeChange，PageUp/PageDown）。
+    pub fn large_change(mut self, v: f64) -> Self {
+        self.large_change = Some(v);
+        self
+    }
+    /// 旋钮布局：0=Hidden 1=Compact 2=Inline。
+    pub fn spin_button_placement_mode(mut self, v: i32) -> Self {
+        self.spin_button_placement_mode = Some(v);
+        self
+    }
 }
 
 impl Widget for NumberBox {
     widget_header!(ControlKind::NumberBox);
     fn bindings(&self) -> PropBindings {
-        generated::number_box_bindings(self)
+        let mut out = generated::number_box_bindings(self);
+        if let Some(v) = self.small_change {
+            out.push(Binding::Prop(Prop::SmallChange, PropValue::F64(v)));
+        }
+        if let Some(v) = self.large_change {
+            out.push(Binding::Prop(Prop::LargeChange, PropValue::F64(v)));
+        }
+        if let Some(v) = self.spin_button_placement_mode {
+            out.push(Binding::Prop(
+                Prop::SpinButtonPlacementMode,
+                PropValue::I32(v),
+            ));
+        }
+        out
     }
 }

@@ -184,7 +184,48 @@ impl CompositionAnimationGroup {
     }
 }
 
-/// A map of property-name -> animation applied to a visual so that changes to
+//// A key-frame animation that interpolates a `Vector2` property (such as a
+/// visual's `Size`) through a series of key frames.
+#[derive(Clone)]
+pub struct Vector2KeyFrameAnimation(pub(crate) bindings::Vector2KeyFrameAnimation);
+
+impl Animation for Vector2KeyFrameAnimation {
+    fn as_animation(&self) -> CompositionAnimation {
+        CompositionAnimation(self.0.cast().unwrap())
+    }
+}
+
+impl Vector2KeyFrameAnimation {
+    /// Sets how long one iteration of the animation takes.
+    pub fn set_duration(&self, duration: Duration) {
+        let animation: bindings::IKeyFrameAnimation = self.0.cast().unwrap();
+        animation.SetDuration(to_time_span(duration)).unwrap();
+    }
+
+    /// Sets the property this animation drives (for example `"Size"`).
+    pub fn set_target(&self, target: &str) {
+        let animation: bindings::ICompositionAnimation2 = self.0.cast().unwrap();
+        animation.SetTarget(target).unwrap();
+    }
+
+    /// Inserts a key frame at `progress` whose value is the composition
+    /// `expression` (for example `"this.FinalValue"`), eased along `easing`.
+    pub fn insert_expression_key_frame_with_easing(
+        &self,
+        progress: f32,
+        expression: &str,
+        easing: &CompositionEasingFunction,
+    ) {
+        let animation: bindings::IKeyFrameAnimation = self.0.cast().unwrap();
+        animation
+            .InsertExpressionKeyFrameWithEasingFunction(progress, expression, &easing.0)
+            .unwrap();
+    }
+}
+
+impl Sealed for Vector2KeyFrameAnimation {}
+
+// A map of property-name -> animation applied to a visual so that changes to
 /// those properties animate automatically.
 ///
 /// Create one with [`Compositor::create_implicit_animation_collection`],
@@ -205,5 +246,14 @@ impl ImplicitAnimationCollection {
         let base: bindings::ICompositionAnimationBase = animation.as_animation().0.cast().unwrap();
         map.Insert(&windows_core::HSTRING::from(target), &base)
             .unwrap();
+    }
+
+    /// Drops the animation associated with `target` (no-op if absent).
+    pub fn remove(&self, target: &str) {
+        let map: windows_collections::IMap<
+            windows_core::HSTRING,
+            bindings::ICompositionAnimationBase,
+        > = self.0.cast().unwrap();
+        let _ = map.Remove(&windows_core::HSTRING::from(target));
     }
 }

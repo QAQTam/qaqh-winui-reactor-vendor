@@ -331,6 +331,18 @@ impl<B: Backend + 'static> Reconciler<B> {
             (Some(old_el), Some(output), _) => {
                 let seeded = self.force_state_dirty_components();
                 let result = self.update_output(old_el, new, output);
+let __stale: Vec<_> = seeded.iter().copied().filter(|n| self.is_node_state_dirty(*n)).collect();
+// F-N15 防御：pass 后仍脏的节点（典型为已脱离输出遍历的遗留组件）
+        // 直接消费其脏标记，避免断言中止整窗；计数留日志供追踪。
+        if !__stale.is_empty() {
+            for node_id in &__stale {
+                if let Some(inst) = self.tree.logical.instance(*node_id) {
+                    let _ = inst.render_cx.take_state_dirty();
+                }
+            }
+            let __seeded_n = seeded.len();
+            eprintln!("[F-N15] consumed {} stale state-dirty nodes (seeded={__seeded_n})", __stale.len());
+        }
                 debug_assert!(
                     seeded
                         .iter()
@@ -352,6 +364,18 @@ impl<B: Backend + 'static> Reconciler<B> {
                         logical,
                     },
                 );
+let __stale: Vec<_> = seeded.iter().copied().filter(|n| self.is_node_state_dirty(*n)).collect();
+// F-N15 防御：pass 后仍脏的节点（典型为已脱离输出遍历的遗留组件）
+        // 直接消费其脏标记，避免断言中止整窗；计数留日志供追踪。
+        if !__stale.is_empty() {
+            for node_id in &__stale {
+                if let Some(inst) = self.tree.logical.instance(*node_id) {
+                    let _ = inst.render_cx.take_state_dirty();
+                }
+            }
+            let __seeded_n = seeded.len();
+            eprintln!("[F-N15] consumed {} stale state-dirty nodes (seeded={__seeded_n})", __stale.len());
+        }
                 debug_assert!(
                     seeded
                         .iter()

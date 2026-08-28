@@ -126,6 +126,12 @@ impl Compositor {
         Vector3KeyFrameAnimation(self.0.CreateVector3KeyFrameAnimation().unwrap())
     }
 
+    /// Creates an animation that interpolates a `Vector2` property
+    /// (such as a visual's `Size`) through key frames.
+    pub fn create_vector2_key_frame_animation(&self) -> crate::animation::Vector2KeyFrameAnimation {
+        crate::animation::Vector2KeyFrameAnimation(self.0.CreateVector2KeyFrameAnimation().unwrap())
+    }
+
     /// Creates an empty group whose animations start together.
     pub fn create_animation_group(&self) -> CompositionAnimationGroup {
         let compositor: bindings::ICompositor2 = self.0.cast().unwrap();

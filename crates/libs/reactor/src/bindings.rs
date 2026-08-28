@@ -11568,9 +11568,11 @@ pub struct INumberBox_Vtbl {
     Value: usize,
     pub SetValue: unsafe extern "system" fn(*mut core::ffi::c_void, f64) -> windows_core::HRESULT,
     SmallChange: usize,
-    SetSmallChange: usize,
+    pub SetSmallChange:
+        unsafe extern "system" fn(*mut core::ffi::c_void, f64) -> windows_core::HRESULT,
     LargeChange: usize,
-    SetLargeChange: usize,
+    pub SetLargeChange:
+        unsafe extern "system" fn(*mut core::ffi::c_void, f64) -> windows_core::HRESULT,
     Text: usize,
     SetText: usize,
     Header: usize,
@@ -11595,7 +11597,10 @@ pub struct INumberBox_Vtbl {
     ValidationMode: usize,
     SetValidationMode: usize,
     SpinButtonPlacementMode: usize,
-    SetSpinButtonPlacementMode: usize,
+    pub SetSpinButtonPlacementMode: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        NumberBoxSpinButtonPlacementMode,
+    ) -> windows_core::HRESULT,
     IsWrapEnabled: usize,
     SetIsWrapEnabled: usize,
     AcceptsExpression: usize,
@@ -12813,6 +12818,7 @@ impl IRangeBase {
             .ok()
         }
     }
+
     pub(crate) fn SetValue(&self, value: f64) -> windows_core::Result<()> {
         unsafe {
             (windows_core::Interface::vtable(self).SetValue)(
@@ -20849,6 +20855,36 @@ windows_core::imp::required_hierarchy!(
     DependencyObject
 );
 impl NumberBox {
+    pub(crate) fn SetSmallChange(&self, value: f64) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetSmallChange)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetLargeChange(&self, value: f64) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetLargeChange)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetSpinButtonPlacementMode(
+        &self,
+        value: NumberBoxSpinButtonPlacementMode,
+    ) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetSpinButtonPlacementMode)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
     pub(crate) fn new() -> windows_core::Result<Self> {
         Self::INumberBoxFactory(|this| unsafe {
             let mut result__ = core::mem::zeroed();
@@ -23460,6 +23496,25 @@ impl SplitViewDisplayMode {
 }
 impl windows_core::TypeKind for SplitViewDisplayMode {
     type TypeKind = windows_core::CopyType;
+}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NumberBoxSpinButtonPlacementMode(pub i32);
+impl NumberBoxSpinButtonPlacementMode {
+    /// Hidden（无旋钮）。
+    pub const Hidden: Self = Self(0);
+    /// Compact（紧贴输入框的小上下钮，QAQ 设置页采用）。
+    pub const Compact: Self = Self(1);
+    /// Inline（占独立一列的大旋钮）。
+    pub const Inline: Self = Self(2);
+}
+impl windows_core::TypeKind for NumberBoxSpinButtonPlacementMode {
+    type TypeKind = windows_core::CopyType;
+}
+impl windows_core::RuntimeType for NumberBoxSpinButtonPlacementMode {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::from_slice(
+        b"enum(Microsoft.UI.Xaml.Controls.NumberBoxSpinButtonPlacementMode;i4)",
+    );
 }
 impl windows_core::RuntimeType for SplitViewDisplayMode {
     const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::from_slice(
