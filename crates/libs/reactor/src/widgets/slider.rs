@@ -12,6 +12,10 @@ pub struct Slider {
     pub header: Option<String>,
     pub orientation: Orientation,
     pub is_enabled: bool,
+    /// 刻度间距（QAQ B1：composer 强度柄档位刻度）。
+    pub tick_frequency: Option<f64>,
+    pub tick_placement: Option<TickPlacement>,
+    pub snaps_to: Option<SnapsTo>,
 }
 impl Default for Slider {
     fn default() -> Self {
@@ -26,6 +30,9 @@ impl Default for Slider {
             header: None,
             orientation: Orientation::Horizontal,
             is_enabled: true,
+            tick_frequency: None,
+            tick_placement: None,
+            snaps_to: None,
         }
     }
 }
@@ -65,6 +72,18 @@ impl Slider {
     }
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.is_enabled = enabled;
+        self
+    }
+    pub fn tick_frequency(mut self, v: f64) -> Self {
+        self.tick_frequency = Some(v);
+        self
+    }
+    pub fn tick_placement(mut self, v: TickPlacement) -> Self {
+        self.tick_placement = Some(v);
+        self
+    }
+    pub fn snaps_to(mut self, v: SnapsTo) -> Self {
+        self.snaps_to = Some(v);
         self
     }
 }

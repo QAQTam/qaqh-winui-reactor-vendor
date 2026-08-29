@@ -966,6 +966,9 @@ let __stale: Vec<_> = seeded.iter().copied().filter(|n| self.is_node_state_dirty
         if let Some(v) = mods.opacity {
             self.backend.set_prop(id, Prop::Opacity, &PropValue::F64(v));
         }
+        if let Some(v) = mods.elevation {
+            self.backend.set_prop(id, Prop::Elevation, &PropValue::F64(v));
+        }
         if let Some(v) = &mods.background {
             self.backend
                 .set_prop(id, Prop::Background, &PropValue::Color(*v));

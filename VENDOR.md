@@ -33,6 +33,8 @@
 | F-N15 STALE 防御 | `reactor/src/reconciler/mod.rs` | pass 后仍脏节点消费脏标记（A 方案），替代 debug_assert 中止 |
 | NumberBox 压缩阈值旋钮 | `reactor/src/widgets/number_box.rs`、`backend/winui/{generated_set_prop.rs,bindings.rs}` | SmallChange/LargeChange/SpinButtonPlacementMode（**regen 时需保留**） |
 | ScrollViewer 追底 | 快照自带 | scroll_to_bottom 滚动命令组（思考链路追底依赖） |
+| B1 Slider 刻度三件套（2026-08-29） | `reactor/src/{bindings,generated}.rs`、`widgets/slider.rs`、`backend/{mod.rs,winui/mod.rs}`、`lib.rs` re-exports | `tick_frequency/tick_placement/snaps_to` 属性面；FFI 槽位补类型化 setter + SnapsTo/TickPlacement 枚举；回归 `tests/slider_ticks.rs` |
+| B2 ThemeShadow/Elevation（2026-08-29） | `reactor/src/{bindings,style,element}.rs`、`reconciler/mod.rs`、`backend/{mod.rs,winui/mod.rs}` | `Modifiers.elevation` → ThemeShadow；receiver=直接父元素（insert_child 时解析——prop 阶段父未挂）；IThemeShadow.Receivers（UIElementWeakCollection 未投影，经 IVector<UIElement> 收货）+ IUIElement SetShadow/SetTranslation 透传；全 app 仅 composer 卡使用 |
 
 待办补丁（冻结基线上实施）：Slider 刻度三件套（tick_frequency/tick_placement/snaps_to，FFI 槽位已投影）·
 AnimatedIcon+AnimatedVisuals 通道（~150-250 行）· F-R3 删除线 / F-R4 Hyperlink · F-T1 TabView selection key。

@@ -1026,6 +1026,13 @@ pub trait VisualExt: capability::Visual + Sized {
         self
     }
 
+    /// ThemeShadow 悬浮高度（z 轴）。投影落在直接父元素上；全 app 仅 composer
+    /// 卡使用（QAQ B2，语义见 qaqh-winui-app docs/nextdev/composer-streamline.md）。
+    fn elevation(mut self, z: f64) -> Self {
+        capability::Visual::visual_modifiers_mut(&mut self).elevation = Some(z);
+        self
+    }
+
     fn with_opacity_transition(mut self, duration: Duration) -> Self {
         with_implicit_transition(
             capability::Visual::visual_modifiers_mut(&mut self),

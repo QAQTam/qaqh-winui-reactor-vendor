@@ -14532,6 +14532,33 @@ impl ISlider {
             .ok()
         }
     }
+    pub(crate) fn SetSnapsTo(&self, value: SnapsTo) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetSnapsTo)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetTickFrequency(&self, value: f64) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetTickFrequency)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetTickPlacement(&self, value: TickPlacement) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetTickPlacement)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
     pub(crate) fn SetOrientation(&self, value: Orientation) -> windows_core::Result<()> {
         unsafe {
             (windows_core::Interface::vtable(self).SetOrientation)(
@@ -14563,11 +14590,14 @@ pub struct ISlider_Vtbl {
     pub SetStepFrequency:
         unsafe extern "system" fn(*mut core::ffi::c_void, f64) -> windows_core::HRESULT,
     SnapsTo: usize,
-    SetSnapsTo: usize,
+    pub SetSnapsTo:
+        unsafe extern "system" fn(*mut core::ffi::c_void, SnapsTo) -> windows_core::HRESULT,
     TickFrequency: usize,
-    SetTickFrequency: usize,
+    pub SetTickFrequency:
+        unsafe extern "system" fn(*mut core::ffi::c_void, f64) -> windows_core::HRESULT,
     TickPlacement: usize,
-    SetTickPlacement: usize,
+    pub SetTickPlacement:
+        unsafe extern "system" fn(*mut core::ffi::c_void, TickPlacement) -> windows_core::HRESULT,
     Orientation: usize,
     pub SetOrientation:
         unsafe extern "system" fn(*mut core::ffi::c_void, Orientation) -> windows_core::HRESULT,
@@ -14582,6 +14612,41 @@ pub struct ISlider_Vtbl {
         *mut core::ffi::c_void,
         *mut core::ffi::c_void,
     ) -> windows_core::HRESULT,
+}
+// QAQ B1 手工补投影：刻度吸附三件套枚举（composer 强度柄，2026-08-29；槽位顺序
+// 与 ISlider 方法表一致，bindgen regen 时会被完整投影取代——需保留语义核对）。
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SnapsTo(pub i32);
+impl SnapsTo {
+    pub const StepValues: Self = Self(0);
+    pub const Ticks: Self = Self(1);
+}
+impl windows_core::TypeKind for SnapsTo {
+    type TypeKind = windows_core::CopyType;
+}
+impl windows_core::RuntimeType for SnapsTo {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::from_slice(
+        b"enum(Microsoft.UI.Xaml.Controls.SnapsTo;i4)",
+    );
+}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TickPlacement(pub i32);
+impl TickPlacement {
+    pub const None: Self = Self(0);
+    pub const TopLeft: Self = Self(1);
+    pub const BottomRight: Self = Self(2);
+    pub const Outside: Self = Self(3);
+    pub const Inline: Self = Self(4);
+}
+impl windows_core::TypeKind for TickPlacement {
+    type TypeKind = windows_core::CopyType;
+}
+impl windows_core::RuntimeType for TickPlacement {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::from_slice(
+        b"enum(Microsoft.UI.Xaml.Controls.TickPlacement;i4)",
+    );
 }
 windows_core::imp::define_interface!(
     ISliderFactory,
@@ -16615,6 +16680,13 @@ impl windows_core::RuntimeType for IThemeShadow {
 #[repr(C)]
 pub struct IThemeShadow_Vtbl {
     pub base__: windows_core::IInspectable_Vtbl,
+    // QAQ B2 手工补投影：Receivers 是该接口唯一方法，槽位紧跟 IInspectable
+    // （IDL: microsoft.ui.xaml.coretypes.idl `UIElementWeakCollection Receivers{get;}`）。
+    // 返回 IInspectable，由调用方 cast 到 windows_collections::IVector<UIElement>。
+    pub Receivers: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
 }
 windows_core::imp::define_interface!(
     IThemeShadowFactory,
@@ -16634,6 +16706,22 @@ pub struct IThemeShadowFactory_Vtbl {
         *mut *mut core::ffi::c_void,
         *mut *mut core::ffi::c_void,
     ) -> windows_core::HRESULT,
+}
+impl IThemeShadow {
+    // Receivers 实际类型 UIElementWeakCollection 未投影；其默认接口为
+    // IVector<UIElement>，按 KeyboardAccelerators 先例直接以接口类型收货。
+    pub(crate) fn Receivers(
+        &self,
+    ) -> windows_core::Result<windows_collections::IVector<UIElement>> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).Receivers)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::Type::from_abi(result__))
+        }
+    }
 }
 windows_core::imp::define_interface!(
     ITimePicker,
@@ -17598,6 +17686,30 @@ impl IUIElement {
             .ok()
         }
     }
+    pub(crate) fn SetTranslation(
+        &self,
+        value: windows_numerics::Vector3,
+    ) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetTranslation)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn SetShadow<P0>(&self, value: P0) -> windows_core::Result<()>
+    where
+        P0: windows_core::Param<Shadow>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetShadow)(
+                windows_core::Interface::as_raw(self),
+                value.param().abi(),
+            )
+            .ok()
+        }
+    }
     pub(crate) fn SetOpacity(&self, value: f64) -> windows_core::Result<()> {
         unsafe {
             (windows_core::Interface::vtable(self).SetOpacity)(
@@ -18203,7 +18315,11 @@ pub struct IUIElement_Vtbl {
     OpacityTransition: usize,
     SetOpacityTransition: usize,
     Translation: usize,
-    SetTranslation: usize,
+    // QAQ B2 手工补投影：Translation/SetShadow（composer 悬浮卡 elevation，2026-08-29）。
+    pub SetTranslation: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        windows_numerics::Vector3,
+    ) -> windows_core::HRESULT,
     TranslationTransition: usize,
     SetTranslationTransition: usize,
     Rotation: usize,
@@ -18234,7 +18350,10 @@ pub struct IUIElement_Vtbl {
         *mut core::ffi::c_void,
     ) -> windows_core::HRESULT,
     Shadow: usize,
-    SetShadow: usize,
+    pub SetShadow: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
     RasterizationScale: usize,
     SetRasterizationScale: usize,
     FocusState: usize,

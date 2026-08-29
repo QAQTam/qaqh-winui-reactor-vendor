@@ -678,7 +678,7 @@ pub fn selector_bar_bindings(w: &SelectorBar) -> PropBindings {
     )]
 }
 pub fn slider_bindings(w: &Slider) -> PropBindings {
-    let mut out = Vec::with_capacity(7usize);
+    let mut out = Vec::with_capacity(10usize);
     out.push(Binding::Event(
         Event::ValueChanged,
         w.on_value_changed
@@ -698,6 +698,16 @@ pub fn slider_bindings(w: &Slider) -> PropBindings {
         Prop::Orientation,
         PropValue::I32(w.orientation.0),
     ));
+    // QAQ B1 手工补臂：刻度三件套（regen 时需保留）。
+    if let Some(v) = w.snaps_to {
+        out.push(Binding::Prop(Prop::SnapsTo, PropValue::I32(v.0)));
+    }
+    if let Some(v) = w.tick_frequency {
+        out.push(Binding::Prop(Prop::TickFrequency, PropValue::F64(v)));
+    }
+    if let Some(v) = w.tick_placement {
+        out.push(Binding::Prop(Prop::TickPlacement, PropValue::I32(v.0)));
+    }
     out.push(Binding::Prop(Prop::Value, PropValue::F64(w.value)));
     out
 }

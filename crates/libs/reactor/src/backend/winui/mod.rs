@@ -157,6 +157,10 @@ pub struct WinUIBackend {
     /// ContentDialog 生命周期状态：关闭动画前清空内容/缩小尺寸（规避 WinUI
     /// 关闭残影），重新打开前据此恢复。`closing_attached` 防重复挂事件。
     /// Rc 包装：Closed 事件闭包（`attach_event`）需捕获它来复位 closing/shown。
+    /// QAQ B2：Elevation z 值暂存（prop 阶段父未挂，receiver 在 insert_child 解析）。
+    elevation: RefCell<FxHashMap<ControlId, f64>>,
+    /// QAQ B2：已插入树并应用过投影的元素（生命周期内 set_prop 直接改 Translation）。
+    elevation_live: RefCell<FxHashSet<ControlId>>,
     dialog_state: Rc<RefCell<FxHashMap<ControlId, DialogState>>>,
     /// 程序化关闭（✕）排队 Hide 的取消标志：IsOpen(true) 置 false 取消，
     /// 防止「排队 Hide 期间重新打开」把新对话框关掉。
@@ -610,6 +614,8 @@ impl WinUIBackend {
             resource_keys: RefCell::new(FxHashMap::default()),
             flyout_open_pending: RefCell::new(FxHashMap::default()),
             flyout_closed_pending: RefCell::new(FxHashMap::default()),
+            elevation: RefCell::new(FxHashMap::default()),
+            elevation_live: RefCell::new(FxHashSet::default()),
             dialog_state: Rc::new(RefCell::new(FxHashMap::default())),
             dialog_hide_pending: RefCell::new(FxHashMap::default()),
             window_state: RefCell::new(None),
@@ -1799,6 +1805,29 @@ impl Backend for WinUIBackend {
         id
     }
     fn set_prop(&mut self, id: ControlId, prop: Prop, value: &PropValue) {
+        // QAQ B2 手工补臂：Elevation 不走通用 prop——receiver 需父句柄，
+        // prop 阶段元素尚未插入（mount_widget 先于 insert_child），暂存后延迟解析。
+        if prop == Prop::Elevation {
+            match value {
+                PropValue::F64(z) => {
+                    let live = self.elevation_live.borrow().contains(&id);
+                    self.elevation.borrow_mut().insert(id, *z);
+                    if live {
+                        if let Some(handle) = self.controls.borrow().get(&id) {
+                            diag::dropped(handle.as_ui_element().SetTranslation(
+                                windows_numerics::Vector3 { x: 0.0, y: 0.0, z: *z as f32 },
+                            ));
+                        }
+                    }
+                }
+                PropValue::Unset => {
+                    self.elevation.borrow_mut().remove(&id);
+                    self.elevation_live.borrow_mut().remove(&id);
+                }
+                _ => {}
+            }
+            return;
+        }
         let map = self.controls.borrow();
         let handle = map
             .get(&id)
@@ -2008,6 +2037,26 @@ impl Backend for WinUIBackend {
                 (Prop::Step, PropValue::Unset, Handle::Slider(s)) => {
                     s.SetStepFrequency(1.0)?;
                     s.cast::<bindings::IRangeBase>()?.SetSmallChange(1.0)
+                }
+                // QAQ B1 手工补臂：Slider 刻度三件套（composer 强度柄，2026-08-29；
+                // regen 时需保留）。
+                (Prop::TickFrequency, PropValue::F64(v), Handle::Slider(s)) => {
+                    s.SetTickFrequency(*v)
+                }
+                (Prop::TickFrequency, PropValue::Unset, Handle::Slider(s)) => {
+                    s.SetTickFrequency(1.0)
+                }
+                (Prop::SnapsTo, PropValue::I32(v), Handle::Slider(s)) => {
+                    s.SetSnapsTo(SnapsTo(*v))
+                }
+                (Prop::SnapsTo, PropValue::Unset, Handle::Slider(s)) => {
+                    s.SetSnapsTo(SnapsTo::StepValues)
+                }
+                (Prop::TickPlacement, PropValue::I32(v), Handle::Slider(s)) => {
+                    s.SetTickPlacement(TickPlacement(*v))
+                }
+                (Prop::TickPlacement, PropValue::Unset, Handle::Slider(s)) => {
+                    s.SetTickPlacement(TickPlacement::None)
                 }
                 (Prop::NavigateUri, PropValue::Str(s), Handle::HyperlinkButton(h)) => {
                     let uri = bindings::Uri::CreateUri(s.as_str())?;
@@ -2646,6 +2695,19 @@ impl Backend for WinUIBackend {
         let cc = classify_container(parent_h)
             .unwrap_or_else(|| panic!("WinUIBackend::insert_child: {parent} is not a container"));
         container_insert(&cc, index, &child_ui);
+        // QAQ B2：Elevation 在插入时落地——receiver = 直接父元素（悬浮卡的
+        // 影子落在承载它的面板上；全 app 语义见 composer-streamline B2）。
+        let z = self.elevation.borrow().get(&child).copied();
+        if let Some(z) = z {
+            let shadow = bindings::ThemeShadow::new().unwrap();
+            let receivers = shadow.Receivers().unwrap();
+            diag::dropped(receivers.Append(&parent_h.as_ui_element()));
+            diag::dropped(child_ui.SetShadow(&shadow));
+            diag::dropped(
+                child_ui.SetTranslation(windows_numerics::Vector3 { x: 0.0, y: 0.0, z: z as f32 }),
+            );
+            self.elevation_live.borrow_mut().insert(child);
+        }
     }
     fn set_templated_item_count(&mut self, id: ControlId, count: usize) {
         let map = self.controls.borrow();
@@ -3224,6 +3286,8 @@ impl Backend for WinUIBackend {
         self.drag_revokers.borrow_mut().remove(&id);
         self.dialog_state.borrow_mut().remove(&id);
         self.dialog_hide_pending.borrow_mut().remove(&id);
+        self.elevation.borrow_mut().remove(&id);
+        self.elevation_live.borrow_mut().remove(&id);
         self.controls.borrow_mut().remove(&id);
         self.event_revokers
             .borrow_mut()

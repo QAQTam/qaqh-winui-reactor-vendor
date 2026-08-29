@@ -625,6 +625,8 @@ pub struct Modifiers {
     pub max_width: Option<f64>,
     pub min_height: Option<f64>,
     pub max_height: Option<f64>,
+    /// QAQ B2：ThemeShadow 悬浮高度（仅 composer 卡使用；receiver=直接父元素）。
+    pub elevation: Option<f64>,
     pub horizontal_alignment: Option<HorizontalAlignment>,
     pub vertical_alignment: Option<VerticalAlignment>,
     pub opacity: Option<f64>,
@@ -658,6 +660,7 @@ impl Modifiers {
             && self.max_width.is_none()
             && self.min_height.is_none()
             && self.max_height.is_none()
+            && self.elevation.is_none()
             && self.horizontal_alignment.is_none()
             && self.vertical_alignment.is_none()
             && self.opacity.is_none()
