@@ -539,9 +539,19 @@ pub fn dispatch(handle: &Handle, prop: Prop, value: &PropValue) -> Result<bool> 
         // DeepX patch: 滚动到底部（generation 触发；目标 = 当前 ScrollableHeight）。
         // 与 templated list 的 Tail 请求共享语义：reconcile 先于 layout，
         // 若 ScrollableHeight 尚未更新则本次滚动滞后一帧，由下一次请求修正。
+        //
+        // 空转护栏：目标已等于当前位置时**不发 ChangeView**。ChangeView 会使
+        // 布局失效，而本属性由 reconcile 在每帧下发；"目标 == 当前"的空转会在
+        // 布局帧内反复 invalidate，直到 XAML 抛 AG_E_LAYOUT_CYCLE fail-fast
+        // （0xc000027b stowed，resume 大会话崩溃族）。resume 时大量
+        // reasoning/tool 块的首帧 ScrollableHeight 为 0 且 offset 也为 0，
+        // 正是此路径的典型触发点。
         (Prop::ScrollToBottom, PropValue::I32(_), Handle::ScrollViewer(h)) => {
             let target = h.ScrollableHeight()?;
-            h.ChangeViewWithOptionalAnimation(None, Some(target), None, true)?;
+            let current = h.VerticalOffset().unwrap_or(0.0);
+            if (target - current).abs() > SCROLL_TARGET_EPSILON {
+                h.ChangeViewWithOptionalAnimation(None, Some(target), None, true)?;
+            }
         }
         (Prop::MinZoomFactor, PropValue::F64(v), Handle::ScrollViewer(h)) => {
             h.SetMinZoomFactor(*v)?;

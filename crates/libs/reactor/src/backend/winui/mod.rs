@@ -260,6 +260,16 @@ struct TemplatedScrollState {
     /// Bounds the wait so an unsatisfiable request cannot pin `pending` for
     /// the lifetime of the process. Reset on any observed progress.
     stalled_attempts: u32,
+    /// A `ChangeView` has already been issued for `pending` and we are waiting
+    /// for `ViewChanged` to acknowledge it. Re-issuing while this is set is the
+    /// layout-cycle bug: `ChangeView` invalidates layout, and this function is
+    /// driven from a persistent `LayoutUpdated` handler, so the pair spins
+    /// layout -> ChangeView -> layout until XAML fails fast with
+    /// AG_E_LAYOUT_CYCLE.
+    issued: bool,
+    /// Layout passes spent waiting for that acknowledgement. Bounds the wait so
+    /// a `ViewChanged` that never resolves cannot pin `pending` forever.
+    issued_passes: u32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -290,6 +300,8 @@ impl Default for TemplatedScrollState {
             pending: None,
             last_scrollable: 0.0,
             stalled_attempts: 0,
+            issued: false,
+            issued_passes: 0,
         }
     }
 }
@@ -456,6 +468,15 @@ impl TemplatedList {
 
 const TAIL_POSITION_EPSILON: f64 = 0.5;
 
+/// Scroll-position tolerance shared by every "scroll to bottom" path.
+///
+/// `ChangeView` invalidates layout. Issuing one whose target already equals the
+/// current offset therefore spins a layout -> ChangeView -> layout loop when the
+/// caller is driven from a layout pass, and XAML aborts that loop with a
+/// fail-fast carrying AG_E_LAYOUT_CYCLE (0xc000027b, stowed). Every scroll
+/// request must compare before it commits.
+pub(crate) const SCROLL_TARGET_EPSILON: f64 = 0.5;
+
 /// Layout passes a request may wait through without progress before it is
 /// treated as unsatisfiable and dropped.
 ///
@@ -474,25 +495,39 @@ impl TemplatedScrollState {
         self.pending = None;
         self.stalled_attempts = 0;
         self.last_scrollable = 0.0;
+        self.issued = false;
+        self.issued_passes = 0;
     }
-}
 
-/// Records a layout pass that could not advance the pending request and reports
-/// whether the wait budget is now exhausted (the caller should drop it).
-///
-/// A pass counts as progress when `ScrollableHeight` grew since the previous
-/// one, so a large list still realizing its viewport never trips the budget.
-/// Bounding the wait is what stops an unsatisfiable request from being retried
-/// forever out of the persistent `LayoutUpdated` handler.
-fn note_scroll_wait(state: &mut TemplatedScrollState, scrollable: f64) -> bool {
-    let progressed = scrollable > state.last_scrollable + TAIL_POSITION_EPSILON;
-    state.last_scrollable = scrollable;
-    state.stalled_attempts = if progressed {
-        0
-    } else {
-        state.stalled_attempts.saturating_add(1)
-    };
-    state.stalled_attempts >= MAX_STALLED_SCROLL_ATTEMPTS
+    /// Records a layout pass that could not advance the pending request and
+    /// reports whether the wait budget is now exhausted (drop it).
+    ///
+    /// A pass counts as progress when `ScrollableHeight` grew since the
+    /// previous one, so a large list still realizing its viewport never trips
+    /// the budget. Bounding the wait is what stops an unsatisfiable request
+    /// from being retried forever out of the persistent `LayoutUpdated`
+    /// handler.
+    fn note_scroll_wait(&mut self, scrollable: f64) -> bool {
+        let progressed = scrollable > self.last_scrollable + TAIL_POSITION_EPSILON;
+        self.last_scrollable = scrollable;
+        self.stalled_attempts = if progressed {
+            0
+        } else {
+            self.stalled_attempts.saturating_add(1)
+        };
+        self.stalled_attempts >= MAX_STALLED_SCROLL_ATTEMPTS
+    }
+
+    /// Records a layout pass spent waiting for `ViewChanged` after an issued
+    /// `ChangeView`, and reports whether that wait is now exhausted.
+    ///
+    /// Deliberately does not reset on extent growth: an extent that keeps
+    /// growing while the acknowledgement never arrives would otherwise reset
+    /// the budget every pass and loop forever.
+    fn note_issued_wait(&mut self) -> bool {
+        self.issued_passes = self.issued_passes.saturating_add(1);
+        self.issued_passes >= MAX_STALLED_SCROLL_ATTEMPTS
+    }
 }
 
 /// Updates follow-tail intent from a completed/native view change.
@@ -508,12 +543,12 @@ fn observe_templated_view(state: &mut TemplatedScrollState, vertical: f64, scrol
     if moved_up && distance > state.tail_threshold {
         state.following_tail = false;
         if matches!(state.pending, Some(PreparedTemplatedScroll::Tail)) {
-            state.pending = None;
+            state.drop_pending();
         }
     } else if distance <= state.tail_threshold {
         state.following_tail = true;
         if matches!(state.pending, Some(PreparedTemplatedScroll::Tail)) {
-            state.pending = None;
+            state.drop_pending();
         }
     }
 
@@ -529,7 +564,7 @@ fn apply_prepared_templated_scroll_shared(
     scroll: &Rc<RefCell<TemplatedScrollState>>,
     item_containers: &Rc<RefCell<FxHashMap<usize, bindings::IUIElement>>>,
 ) -> bool {
-    let (request, viewer) = {
+    let (request, viewer, already_issued) = {
         let state = scroll.borrow();
         let Some(request) = state.pending else {
             return true;
@@ -537,8 +572,34 @@ fn apply_prepared_templated_scroll_shared(
         let Some(viewer) = state.viewer.clone() else {
             return false;
         };
-        (request, viewer)
+        (request, viewer, state.issued)
     };
+
+    // A `ChangeView` is already in flight for this request; `ViewChanged` owns
+    // the acknowledgement. Do NOT re-issue here.
+    //
+    // This is the layout-cycle bug: `ChangeView` invalidates layout, and this
+    // function runs from a persistent `LayoutUpdated` handler. Re-issuing on
+    // every layout pass spins layout -> ChangeView -> layout until XAML aborts
+    // with a fail-fast carrying AG_E_LAYOUT_CYCLE (0xc000027b, stowed) — the
+    // resume-large-session crash. Waiting for the native acknowledgement is
+    // both correct and what breaks the cycle.
+    //
+    // The wait is bounded: a `ViewChanged` that never resolves (e.g. the
+    // offset was already at `target`, so no change event fires) must not pin
+    // `pending` for the lifetime of the process.
+    if already_issued {
+        let mut state = scroll.borrow_mut();
+        if state.note_issued_wait() {
+            diag::warn(format_args!(
+                "templated scroll: dropping request after \
+                 {MAX_STALLED_SCROLL_ATTEMPTS} layout passes without ViewChanged"
+            ));
+            state.drop_pending();
+            return true;
+        }
+        return false;
+    }
 
     let (target, wait_for_confirmation) = match request {
         PreparedTemplatedScroll::Tail => {
@@ -597,7 +658,7 @@ fn apply_prepared_templated_scroll_shared(
             // later layout pass (the one that materializes the extent) apply
             // the request with usable geometry.
             let mut state = scroll.borrow_mut();
-            if note_scroll_wait(&mut state, scrollable) {
+            if state.note_scroll_wait(scrollable) {
                 diag::warn(format_args!(
                     "templated scroll: dropping unsatisfiable Tail request after \
                      {MAX_STALLED_SCROLL_ATTEMPTS} stalled layout passes"
@@ -628,7 +689,7 @@ fn apply_prepared_templated_scroll_shared(
         // bounded, since this path is also driven from `LayoutUpdated` and a
         // view that never accepts the change would otherwise retry forever.
         let mut state = scroll.borrow_mut();
-        if note_scroll_wait(&mut state, scrollable) {
+        if state.note_scroll_wait(scrollable) {
             diag::warn(format_args!(
                 "templated scroll: dropping request after \
                  {MAX_STALLED_SCROLL_ATTEMPTS} layout passes refused ChangeView"
@@ -640,8 +701,15 @@ fn apply_prepared_templated_scroll_shared(
     }
 
     if wait_for_confirmation {
-        // ViewChanged owns acknowledgement, because another layout pass can
-        // increase ScrollableHeight while the change is being applied.
+        // Mark the request as issued: `ViewChanged` owns acknowledgement, and
+        // later layout passes must not re-issue the `ChangeView` (see the
+        // guard at the top of this function). Another layout pass can increase
+        // `ScrollableHeight` while the change is being applied, so the target
+        // is deliberately re-derived by the next legitimate request rather
+        // than by a retry loop.
+        let mut state = scroll.borrow_mut();
+        state.issued = true;
+        state.issued_passes = 0;
         return false;
     }
 
@@ -3180,6 +3248,8 @@ impl Backend for WinUIBackend {
         // request's stall count says nothing about this one.
         state.stalled_attempts = 0;
         state.last_scrollable = 0.0;
+        state.issued = false;
+        state.issued_passes = 0;
         state.pending = match request {
             TemplatedScrollRequest::ForceTail { .. } => Some(PreparedTemplatedScroll::Tail),
             TemplatedScrollRequest::FollowTail { .. } if state.following_tail => {
@@ -4825,10 +4895,10 @@ mod templated_scroll_tests {
         let mut state = TemplatedScrollState::default();
 
         for _ in 0..MAX_STALLED_SCROLL_ATTEMPTS - 1 {
-            assert!(!note_scroll_wait(&mut state, 0.0), "budget must not trip early");
+            assert!(!state.note_scroll_wait(0.0), "budget must not trip early");
         }
         assert!(
-            note_scroll_wait(&mut state, 0.0),
+            state.note_scroll_wait(0.0),
             "budget must be exhausted at the threshold"
         );
     }
@@ -4843,7 +4913,7 @@ mod templated_scroll_tests {
         for step in 0..(MAX_STALLED_SCROLL_ATTEMPTS * 3) {
             let scrollable = f64::from(step) * 32.0;
             assert!(
-                !note_scroll_wait(&mut state, scrollable),
+                !state.note_scroll_wait(scrollable),
                 "progress at step {step} must reset the budget"
             );
         }
@@ -4855,11 +4925,54 @@ mod templated_scroll_tests {
         let mut state = following_state();
         state.last_scrollable = 512.0;
         state.stalled_attempts = 7;
+        state.issued = true;
+        state.issued_passes = 9;
 
         state.drop_pending();
 
         assert_eq!(state.pending, None);
         assert_eq!(state.stalled_attempts, 0);
         assert_eq!(state.last_scrollable, 0.0);
+        assert!(!state.issued);
+        assert_eq!(state.issued_passes, 0);
+    }
+
+    #[test]
+    fn issued_change_view_wait_is_bounded() {
+        // After a `ChangeView` is issued, later layout passes must wait for
+        // `ViewChanged` instead of re-issuing — re-issuing is the layout-cycle
+        // bug. A `ViewChanged` that never resolves must still not pin the
+        // request forever, so the wait is bounded.
+        let mut state = TemplatedScrollState::default();
+        state.issued = true;
+
+        for _ in 0..MAX_STALLED_SCROLL_ATTEMPTS - 1 {
+            assert!(!state.note_issued_wait(), "budget must not trip early");
+        }
+        assert!(
+            state.note_issued_wait(),
+            "budget must be exhausted at the threshold"
+        );
+    }
+
+    #[test]
+    fn issued_wait_is_not_reset_by_extent_growth() {
+        // Extent growth must NOT reset the issued-wait budget: a list that
+        // keeps growing while the acknowledgement never arrives would
+        // otherwise loop forever, which is the bug this guards against.
+        let mut state = TemplatedScrollState::default();
+        state.issued = true;
+
+        for _ in 0..MAX_STALLED_SCROLL_ATTEMPTS {
+            let _ = state.note_scroll_wait(4096.0);
+        }
+        assert_eq!(state.issued_passes, 0, "scroll_wait must not touch issued_passes");
+
+        for _ in 0..MAX_STALLED_SCROLL_ATTEMPTS {
+            if state.note_issued_wait() {
+                return;
+            }
+        }
+        panic!("issued-wait budget must exhaust despite extent growth");
     }
 }
