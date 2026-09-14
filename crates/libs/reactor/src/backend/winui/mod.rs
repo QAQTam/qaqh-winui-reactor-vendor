@@ -252,6 +252,14 @@ struct TemplatedScrollState {
     on_view_changed: Option<Callback<TemplatedViewport>>,
     near_top: bool,
     pending: Option<PreparedTemplatedScroll>,
+    /// Last `ScrollableHeight` observed while a request waited on layout.
+    /// Distinguishes "extent still growing" (progress: keep waiting) from
+    /// "extent never materialized" (stalled: the request is unsatisfiable).
+    last_scrollable: f64,
+    /// Consecutive layout passes with no extent growth while a request waited.
+    /// Bounds the wait so an unsatisfiable request cannot pin `pending` for
+    /// the lifetime of the process. Reset on any observed progress.
+    stalled_attempts: u32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -280,6 +288,8 @@ impl Default for TemplatedScrollState {
             on_view_changed: None,
             near_top: false,
             pending: None,
+            last_scrollable: 0.0,
+            stalled_attempts: 0,
         }
     }
 }
@@ -446,6 +456,45 @@ impl TemplatedList {
 
 const TAIL_POSITION_EPSILON: f64 = 0.5;
 
+/// Layout passes a request may wait through without progress before it is
+/// treated as unsatisfiable and dropped.
+///
+/// Kept well under XAML's own layout-iteration ceiling (~250): the
+/// `ChangeView`-refused path can re-invalidate layout on each retry, so an
+/// unbounded budget would just feed the very loop this guards against. A large
+/// virtualized list realizing its viewport settles in a handful of passes and
+/// resets the counter on every observed extent growth, so this only trips on a
+/// request that can never be honoured (e.g. content fits the viewport, leaving
+/// `ScrollableHeight` at 0 forever).
+const MAX_STALLED_SCROLL_ATTEMPTS: u32 = 30;
+
+impl TemplatedScrollState {
+    /// Clears the pending request and its layout-wait bookkeeping.
+    fn drop_pending(&mut self) {
+        self.pending = None;
+        self.stalled_attempts = 0;
+        self.last_scrollable = 0.0;
+    }
+}
+
+/// Records a layout pass that could not advance the pending request and reports
+/// whether the wait budget is now exhausted (the caller should drop it).
+///
+/// A pass counts as progress when `ScrollableHeight` grew since the previous
+/// one, so a large list still realizing its viewport never trips the budget.
+/// Bounding the wait is what stops an unsatisfiable request from being retried
+/// forever out of the persistent `LayoutUpdated` handler.
+fn note_scroll_wait(state: &mut TemplatedScrollState, scrollable: f64) -> bool {
+    let progressed = scrollable > state.last_scrollable + TAIL_POSITION_EPSILON;
+    state.last_scrollable = scrollable;
+    state.stalled_attempts = if progressed {
+        0
+    } else {
+        state.stalled_attempts.saturating_add(1)
+    };
+    state.stalled_attempts >= MAX_STALLED_SCROLL_ATTEMPTS
+}
+
 /// Updates follow-tail intent from a completed/native view change.
 ///
 /// A growing extent with an unchanged offset is a layout race, not evidence
@@ -530,10 +579,37 @@ fn apply_prepared_templated_scroll_shared(
     // ScrollableHeight of a later layout pass.
     let tail_requires_layout =
         matches!(request, PreparedTemplatedScroll::Tail) && scrollable <= TAIL_POSITION_EPSILON;
-    if !tail_requires_layout && (target - current).abs() <= TAIL_POSITION_EPSILON {
+    if (target - current).abs() <= TAIL_POSITION_EPSILON {
+        if tail_requires_layout {
+            // Nothing to move yet, so do NOT call `ChangeView`.
+            //
+            // `ChangeView` invalidates layout. This function is driven from a
+            // persistent `LayoutUpdated` handler, so issuing a no-op
+            // `ChangeView` on every layout pass spins a
+            // layout -> ChangeView -> layout loop. XAML aborts that loop with a
+            // fail-fast carrying AG_E_LAYOUT_CYCLE (0xc000027b, stowed), and the
+            // process dies with no managed stack — the signature of the
+            // resume-large-session crash.
+            //
+            // The first frames of a snapshot restore land here every time:
+            // reconcile runs before measure/arrange, so `ScrollableHeight` is
+            // still 0 while the extent is already huge. Stay armed and let a
+            // later layout pass (the one that materializes the extent) apply
+            // the request with usable geometry.
+            let mut state = scroll.borrow_mut();
+            if note_scroll_wait(&mut state, scrollable) {
+                diag::warn(format_args!(
+                    "templated scroll: dropping unsatisfiable Tail request after \
+                     {MAX_STALLED_SCROLL_ATTEMPTS} stalled layout passes"
+                ));
+                state.drop_pending();
+                return true;
+            }
+            return false;
+        }
         let mut state = scroll.borrow_mut();
         if state.pending == Some(request) {
-            state.pending = None;
+            state.drop_pending();
             if matches!(request, PreparedTemplatedScroll::Tail) {
                 state.following_tail = true;
             } else if let PreparedTemplatedScroll::RestoreOffset { following_tail, .. } = request {
@@ -548,7 +624,18 @@ fn apply_prepared_templated_scroll_shared(
         .unwrap_or(false);
     if !changed {
         // `false` is not success: the view may not be laid out yet. Keep the
-        // request armed for LayoutUpdated/the next realization pass.
+        // request armed for LayoutUpdated/the next realization pass — but
+        // bounded, since this path is also driven from `LayoutUpdated` and a
+        // view that never accepts the change would otherwise retry forever.
+        let mut state = scroll.borrow_mut();
+        if note_scroll_wait(&mut state, scrollable) {
+            diag::warn(format_args!(
+                "templated scroll: dropping request after \
+                 {MAX_STALLED_SCROLL_ATTEMPTS} layout passes refused ChangeView"
+            ));
+            state.drop_pending();
+            return true;
+        }
         return false;
     }
 
@@ -560,7 +647,7 @@ fn apply_prepared_templated_scroll_shared(
 
     let mut state = scroll.borrow_mut();
     if state.pending == Some(request) {
-        state.pending = None;
+        state.drop_pending();
         if let PreparedTemplatedScroll::RestoreOffset { following_tail, .. } = request {
             state.following_tail = following_tail;
         }
@@ -3089,6 +3176,10 @@ impl Backend for WinUIBackend {
             )
         };
         let mut state = scroll.borrow_mut();
+        // A fresh request restarts the layout-wait budget; the previous
+        // request's stall count says nothing about this one.
+        state.stalled_attempts = 0;
+        state.last_scrollable = 0.0;
         state.pending = match request {
             TemplatedScrollRequest::ForceTail { .. } => Some(PreparedTemplatedScroll::Tail),
             TemplatedScrollRequest::FollowTail { .. } if state.following_tail => {
@@ -4723,5 +4814,52 @@ mod templated_scroll_tests {
 
         assert!(state.following_tail);
         assert_eq!(state.pending, None);
+    }
+
+    #[test]
+    fn stalled_layout_wait_is_bounded() {
+        // A Tail request whose extent never materializes (ScrollableHeight
+        // pinned at 0) must not stay armed forever: this loop is driven from a
+        // persistent LayoutUpdated handler, so an unbounded wait keeps
+        // re-invalidating layout until XAML fails fast with AG_E_LAYOUT_CYCLE.
+        let mut state = TemplatedScrollState::default();
+
+        for _ in 0..MAX_STALLED_SCROLL_ATTEMPTS - 1 {
+            assert!(!note_scroll_wait(&mut state, 0.0), "budget must not trip early");
+        }
+        assert!(
+            note_scroll_wait(&mut state, 0.0),
+            "budget must be exhausted at the threshold"
+        );
+    }
+
+    #[test]
+    fn growing_extent_resets_the_layout_wait_budget() {
+        // A large virtualized list realizing its viewport grows the extent
+        // across passes; that is progress, not a stall, so the budget must
+        // never trip while the extent keeps growing.
+        let mut state = TemplatedScrollState::default();
+
+        for step in 0..(MAX_STALLED_SCROLL_ATTEMPTS * 3) {
+            let scrollable = f64::from(step) * 32.0;
+            assert!(
+                !note_scroll_wait(&mut state, scrollable),
+                "progress at step {step} must reset the budget"
+            );
+        }
+        assert_eq!(state.stalled_attempts, 0);
+    }
+
+    #[test]
+    fn drop_pending_clears_layout_wait_bookkeeping() {
+        let mut state = following_state();
+        state.last_scrollable = 512.0;
+        state.stalled_attempts = 7;
+
+        state.drop_pending();
+
+        assert_eq!(state.pending, None);
+        assert_eq!(state.stalled_attempts, 0);
+        assert_eq!(state.last_scrollable, 0.0);
     }
 }
