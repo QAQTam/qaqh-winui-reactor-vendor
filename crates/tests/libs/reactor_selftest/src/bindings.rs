@@ -27324,7 +27324,7 @@ unsafe impl Send for VisualTreeHelper {}
 unsafe impl Sync for VisualTreeHelper {}
 pub const WINDOWSAPPSDK_RELEASE_MAJORMINOR: i32 = 131076;
 pub const WINDOWSAPPSDK_RELEASE_VERSION_TAG_W: windows_core::PCWSTR = windows_core::w!("");
-pub const WINDOWSAPPSDK_RUNTIME_VERSION_UINT64: u64 = 562967133290496;
+pub const WINDOWSAPPSDK_RUNTIME_VERSION_UINT64: u64 = 562971428323328;
 pub const WM_MOUSEMOVE: i32 = 512;
 pub const WM_SETCURSOR: i32 = 32;
 pub type WPARAM = usize;
